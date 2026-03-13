@@ -6,7 +6,7 @@ import SearchBar from "@/components/SearchBar";
 import ResultCard from "@/components/ResultCard";
 import ProductCard from "@/components/ProductCard";
 
-const FRIENDLY_ERROR = "AI analysis temporarily unavailable. Please try again later.";
+const FALLBACK_ERROR = "AI analysis temporarily unavailable. Please try again later.";
 
 export type ProductRecommendation = {
   name: string;
@@ -72,14 +72,19 @@ export default function Home() {
         `/api/discussions?q=${encodeURIComponent(q)}`
       );
       if (!discussionsRes.ok) {
-        setError(FRIENDLY_ERROR);
+        let msg = FALLBACK_ERROR;
+        try {
+          const d = await discussionsRes.json();
+          if (typeof d?.error === "string") msg = d.error;
+        } catch {}
+        setError(msg);
         setIsLoading(false);
         return;
       }
       const discussionsData = await discussionsRes.json();
       const text = discussionsData.text ?? discussionsData.combinedText ?? "";
       if (discussionsData.error && !text) {
-        setError(FRIENDLY_ERROR);
+        setError(typeof discussionsData.error === "string" ? discussionsData.error : FALLBACK_ERROR);
         setIsLoading(false);
         return;
       }
@@ -89,23 +94,36 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, query: q }),
       });
-      const analysisData = await analyzeRes.json();
+      let analysisData: unknown;
+      try {
+        analysisData = await analyzeRes.json();
+      } catch {
+        setError("Invalid response from server.");
+        setIsLoading(false);
+        return;
+      }
       if (!analyzeRes.ok) {
-        const msg = analysisData?.error === "Too many requests. Please wait."
-          ? "Too many requests. Please wait."
-          : FRIENDLY_ERROR;
+        const msg =
+          typeof (analysisData as { error?: string })?.error === "string"
+            ? (analysisData as { error: string }).error
+            : FALLBACK_ERROR;
         setError(msg);
         setIsLoading(false);
         return;
       }
       if (analysisData && typeof analysisData === "object" && !("mode" in analysisData)) {
-        setError(FRIENDLY_ERROR);
+        const msg =
+          typeof (analysisData as { error?: string })?.error === "string"
+            ? (analysisData as { error: string }).error
+            : FALLBACK_ERROR;
+        setError(msg);
         setIsLoading(false);
         return;
       }
       setResult(analysisData as AnalysisResult);
-    } catch {
-      setError(FRIENDLY_ERROR);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : FALLBACK_ERROR;
+      setError(msg);
     } finally {
       setIsLoading(false);
     }
@@ -197,7 +215,7 @@ export default function Home() {
               <div className="space-y-6">
                 {result.error && (
                   <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-amber-800 text-sm">
-                    {FRIENDLY_ERROR}
+                    {result.error || FALLBACK_ERROR}
                   </div>
                 )}
                 <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">

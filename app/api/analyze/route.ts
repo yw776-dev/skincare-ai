@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
+export const runtime = "nodejs";
+
 const CATEGORY_KEYWORDS = [
   "moisturizer",
   "moisturiser",
@@ -348,15 +350,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  try {
   let text: string;
   let query: string;
   try {
     const body = await req.json();
     text = typeof body?.text === "string" ? body.text : "";
     query = typeof body?.query === "string" ? body.query : "";
-  } catch {
-    text = "";
-    query = "";
+  } catch (parseErr) {
+    console.error("[analyze] Body parse failed:", parseErr);
+    return NextResponse.json(
+      { error: "Invalid request body. Expected JSON with text and query." },
+      { status: 400 }
+    );
   }
 
   const productName = query?.trim()
@@ -396,10 +402,10 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
+    console.error("[analyze] Missing GROQ_API_KEY");
     return NextResponse.json(
-      isCategoryQuery(query)
-        ? emptyCategoryResult
-        : { ...emptyProductResult, error: "GROQ_API_KEY is not set" }
+      { error: "Missing GROQ_API_KEY" },
+      { status: 503 }
     );
   }
 
@@ -502,15 +508,19 @@ Return ONLY valid JSON, no markdown. You may include "whoShouldUse" (one short s
         status === 429
           ? "Too many requests. Please wait a moment and try again."
           : data?.error?.message ?? `Groq API ${status}`;
+      console.error("[analyze] Groq API error:", status, errMsg);
       return NextResponse.json(
-        categoryMode ? emptyCategoryResult : { ...emptyProductResult, error: errMsg }
+        { error: errMsg },
+        { status: status >= 400 ? status : 502 }
       );
     }
 
     const content = data?.choices?.[0]?.message?.content;
     if (!content || typeof content !== "string") {
+      console.error("[analyze] Groq returned no content");
       return NextResponse.json(
-        categoryMode ? emptyCategoryResult : { ...emptyProductResult, error: "Groq returned no content" }
+        { error: "Groq returned no content" },
+        { status: 502 }
       );
     }
 
@@ -562,10 +572,21 @@ Return ONLY valid JSON, no markdown. You may include "whoShouldUse" (one short s
         : e instanceof Error
           ? e.message
           : "Analyze failed";
+    console.error("[analyze] Groq request failed:", e);
     return NextResponse.json(
-      categoryMode ? emptyCategoryResult : { ...emptyProductResult, error: errMsg }
+      { error: errMsg },
+      { status: 502 }
     );
   } finally {
     clearTimeout(timeoutId);
+  }
+
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Analyze failed";
+    console.error("[analyze] Error:", e);
+    return NextResponse.json(
+      { error: message },
+      { status: 500 }
+    );
   }
 }
