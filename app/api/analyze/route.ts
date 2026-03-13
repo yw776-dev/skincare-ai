@@ -421,11 +421,11 @@ export async function POST(req: NextRequest) {
       ? createClient(supabaseUrl, supabaseAnonKey)
       : null;
 
-  function recordSearchQuery() {
+  const recordSearchQuery = () => {
     if (supabase && normalizedQuery) {
       supabase.from("search_queries").insert({ query: normalizedQuery }).then(() => {}, () => {});
     }
-  }
+  };
 
   if (supabase) {
     const { data: cached } = await supabase
