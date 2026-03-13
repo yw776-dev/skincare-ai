@@ -240,19 +240,10 @@ export async function generateMetadata({
 async function fetchAnalysis(query: string): Promise<AnalysisResult | null> {
   const base = getBaseUrl();
   try {
-    const discussionsRes = await fetch(
-      `${base}/api/discussions?q=${encodeURIComponent(query)}`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!discussionsRes.ok) return null;
-    const discussionsData = await discussionsRes.json();
-    const text = discussionsData.text ?? discussionsData.combinedText ?? "";
-    if (!text) return null;
-
     const analyzeRes = await fetch(`${base}/api/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, query }),
+      body: JSON.stringify({ query }),
       cache: "no-store",
     });
     if (!analyzeRes.ok) return null;

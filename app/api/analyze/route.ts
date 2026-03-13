@@ -360,7 +360,14 @@ export async function POST(req: NextRequest) {
   } catch (parseErr) {
     console.error("[analyze] Body parse failed:", parseErr);
     return NextResponse.json(
-      { error: "Invalid request body. Expected JSON with text and query." },
+      { error: "Invalid request body. Expected JSON with query." },
+      { status: 400 }
+    );
+  }
+
+  if (!query?.trim()) {
+    return NextResponse.json(
+      { error: "Missing query" },
       { status: 400 }
     );
   }
@@ -389,15 +396,10 @@ export async function POST(req: NextRequest) {
     general_cons: [] as string[],
   };
 
-  text = filterRelevantText(text, query);
-  text = truncateAtWordBoundary(text, 10000);
-
-  if (!text?.trim()) {
-    return NextResponse.json(
-      isCategoryQuery(query)
-        ? { ...emptyCategoryResult }
-        : { ...emptyProductResult, error: "No discussion text to analyze" }
-    );
+  const hasText = Boolean(text?.trim());
+  if (hasText) {
+    text = filterRelevantText(text, query);
+    text = truncateAtWordBoundary(text, 10000);
   }
 
   const apiKey = process.env.GROQ_API_KEY;
@@ -441,7 +443,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const categoryPrompt = `You analyze Reddit skincare discussions. The user searched for: "${safeQuery}".
+  const categoryPromptWithText = `You analyze skincare discussions. The user searched for: "${safeQuery}".
 
 CRITICAL – Two cases:
 1) If they searched for an INGREDIENT (e.g. Salicylic Acid, BHA, Hyaluronic Acid, Niacinamide, Retinol, Vitamin C, Glycolic Acid, AHA): list 8–15 specific PRODUCTS that contain or feature this ingredient (e.g. for Salicylic Acid/BHA: Paula's Choice 2% BHA, CeraVe SA cleanser, The Ordinary Salicylic Acid, etc.). You MUST fill recommended_products with real product names from the discussion.
@@ -461,7 +463,21 @@ Return valid JSON only. Use "skin_type" not "skinTypes". If no product is clearl
   "general_cons": ["general con 1"]
 }`;
 
-  const productPrompt = `You analyze Reddit discussions about ONE SPECIFIC PRODUCT. The user searched for exactly this product: "${safeQuery}".
+  const categoryPromptNoText = `Based on your knowledge of skincare ingredients and products, provide insights for: "${safeQuery}".
+
+If this is an INGREDIENT (BHA, retinol, vitamin C, niacinamide, hyaluronic acid, etc.): list 8–15 well-known PRODUCTS that contain or feature this ingredient, with brief pros and cons and skin_type when relevant. Use only: "dry", "oily", "combination", "sensitive", "acne prone" for skin_type.
+If this is a product TYPE (moisturizer, cleanser, serum, sunscreen): list 8–15 well-known products of that type with brief pros and cons.
+
+Return valid JSON only. Use "skin_type" not "skinTypes".
+{
+  "recommended_products": [
+    { "name": "Brand Product Name", "pros": ["brief pro 1"], "cons": ["brief con"], "skin_type": ["dry", "sensitive"] }
+  ],
+  "general_pros": ["general pro 1"],
+  "general_cons": ["general con 1"]
+}`;
+
+  const productPromptWithText = `You analyze discussions about ONE SPECIFIC PRODUCT. The user searched for exactly this product: "${safeQuery}".
 
 Discussion text:
 ${truncateAtWordBoundary(text, 8000)}
@@ -470,10 +486,18 @@ Your task: Extract information ONLY about "${safeQuery}". Do NOT list or mention
 
 1. pros – detailed pros (e.g. "very hydrating", "good for sensitive skin", "affordable", "absorbs quickly"). Include 5–12 specific points if mentioned.
 2. cons – detailed cons (e.g. "expensive", "caused breakouts for some", "heavy texture"). Include 3–10 specific points if mentioned.
-3. skinTypes – who this product suits: only use "dry", "oily", "combination", "sensitive", "acne prone" when clearly mentioned in the discussion. Also describe in one phrase what kind of people might benefit (e.g. "people with dry or sensitive skin") if you can infer it.
+3. skinTypes – who this product suits: only use "dry", "oily", "combination", "sensitive", "acne prone" when clearly mentioned. Also describe in one phrase what kind of people might benefit (e.g. "people with dry or sensitive skin") if you can infer it.
 
-Return ONLY valid JSON, no markdown. You may include "whoShouldUse" (one short sentence, e.g. "People with dry or sensitive skin"):
+Return ONLY valid JSON, no markdown. You may include "whoShouldUse" (one short sentence):
 {"pros": ["...", "..."], "cons": ["...", "..."], "skinTypes": ["..."], "whoShouldUse": "optional one sentence"}`;
+
+  const productPromptNoText = `Based on your knowledge of skincare products, provide pros, cons, and who it suits for this product: "${safeQuery}".
+
+Return ONLY valid JSON, no markdown. Use skinTypes array with only: "dry", "oily", "combination", "sensitive", "acne prone". Include "whoShouldUse" (one short sentence) if you can.
+{"pros": ["...", "..."], "cons": ["...", "..."], "skinTypes": ["..."], "whoShouldUse": "optional one sentence"}`;
+
+  const categoryPrompt = hasText ? categoryPromptWithText : categoryPromptNoText;
+  const productPrompt = hasText ? productPromptWithText : productPromptNoText;
 
   const GROQ_TIMEOUT_MS = 15000;
   const controller = new AbortController();

@@ -68,31 +68,10 @@ export default function Home() {
     if (overrideQuery !== undefined) setQuery(overrideQuery);
 
     try {
-      const discussionsRes = await fetch(
-        `/api/discussions?q=${encodeURIComponent(q)}`
-      );
-      if (!discussionsRes.ok) {
-        let msg = FALLBACK_ERROR;
-        try {
-          const d = await discussionsRes.json();
-          if (typeof d?.error === "string") msg = d.error;
-        } catch {}
-        setError(msg);
-        setIsLoading(false);
-        return;
-      }
-      const discussionsData = await discussionsRes.json();
-      const text = discussionsData.text ?? discussionsData.combinedText ?? "";
-      if (discussionsData.error && !text) {
-        setError(typeof discussionsData.error === "string" ? discussionsData.error : FALLBACK_ERROR);
-        setIsLoading(false);
-        return;
-      }
-
       const analyzeRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, query: q }),
+        body: JSON.stringify({ query: q }),
       });
       let analysisData: unknown;
       try {
