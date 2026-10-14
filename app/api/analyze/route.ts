@@ -511,7 +511,7 @@ Return ONLY valid JSON, no markdown. Use skinTypes array with only: "dry", "oily
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b",
         messages: [
           {
             role: "user",
